@@ -1,12 +1,19 @@
-use std::fmt;
-
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use perf_event::events::Hardware;
 use perf_event::{Builder, Counter, Group};
 use tokio::{fs::File, io::AsyncReadExt};
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 use tracing_subscriber;
+use tracing_subscriber::{fmt, prelude::*, registry::Registry};
+
+use tracing::span;
+use tracing::Subscriber;
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
+
+struct PerfLayer;
 
 struct Perf {
     insns: Counter,
@@ -42,25 +49,54 @@ async fn cat(path: &str) {
     let mut contents = [0; 10000];
     file.read_exact(&mut contents).await.expect("read");
     let contents = String::from_utf8(contents.into()).expect("string to utf8");
-    println!("{}", contents);
-    emit_ipc();
+    //println!("{}", contents);
+    contents.chars().into_iter().for_each(|_x| ());
 }
 
-fn emit_ipc() {
-    let mut group = PERF.group.lock();
-    let counts = group.read().expect("group read");
-    event!(
-        Level::INFO,
-        "{{ instructions: {insns}, cycles: {cycles}, ipc: {ipc:.2} }}",
-        insns = counts[&PERF.insns],
-        cycles = counts[&PERF.cycles],
-        ipc = (counts[&PERF.insns] as f64 / counts[&PERF.cycles] as f64)
-    );
+impl PerfLayer {
+    pub fn emit_ipc(&self) {
+        let mut group = PERF.group.lock();
+        let counts = group.read().expect("group read");
+        println!(
+            "{{ instructions: {insns}, cycles: {cycles}, ipc: {ipc:.2} }}",
+            insns = counts[&PERF.insns],
+            cycles = counts[&PERF.cycles],
+            ipc = (counts[&PERF.insns] as f64 / counts[&PERF.cycles] as f64)
+        );
+    }
+}
+
+impl<S> Layer<S> for PerfLayer
+where
+    S: Subscriber + for<'span> LookupSpan<'span> + std::fmt::Debug,
+{
+    fn on_enter(&self, _id: &span::Id, _ctx: Context<'_, S>) {
+        print!("enter: ");
+        self.emit_ipc();
+    }
+
+    fn on_exit(&self, _id: &span::Id, _ctx: Context<'_, S>) {
+        print!("exit : ");
+        self.emit_ipc();
+    }
+}
+
+//fn setup_global_subscriber() -> impl Drop {
+fn setup_global_subscriber() {
+    let fmt_layer = fmt::Layer::default();
+
+    //let (flame_layer, _guard) = FlameLayer::with_file("./tracing.folded").unwrap();
+    let perf_layer = PerfLayer;
+
+    let subscriber = Registry::default().with(fmt_layer).with(perf_layer);
+
+    tracing::subscriber::set_global_default(subscriber).expect("Could not set global default");
+    //_guard
 }
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let _guard = setup_global_subscriber();
     {
         let mut group = PERF.group.lock();
         group.enable().expect("group enable");
