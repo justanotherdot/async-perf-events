@@ -1,0 +1,4 @@
+steps:
+  - label: "Tests"
+    command:
+      - "cargo test"
