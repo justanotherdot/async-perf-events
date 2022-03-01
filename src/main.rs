@@ -46,12 +46,6 @@ async fn cat(path: &str) {
     emit_ipc();
 }
 
-impl fmt::Debug for Perf {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        f.write_str("perf")
-    }
-}
-
 fn emit_ipc() {
     let mut group = PERF.group.lock();
     let counts = group.read().expect("group read");
