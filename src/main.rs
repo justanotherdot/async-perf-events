@@ -71,12 +71,11 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + std::fmt::Debug,
 {
     fn on_enter(&self, _id: &span::Id, _ctx: Context<'_, S>) {
-        print!("enter: ");
-        self.emit_ipc();
+        let mut group = PERF.group.lock();
+        group.reset().expect("failed to reset perf event");
     }
 
     fn on_exit(&self, _id: &span::Id, _ctx: Context<'_, S>) {
-        print!("exit : ");
         self.emit_ipc();
     }
 }
