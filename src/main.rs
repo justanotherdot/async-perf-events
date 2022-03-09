@@ -58,10 +58,11 @@ impl PerfLayer {
         let mut group = PERF.group.lock();
         let counts = group.read().expect("group read");
         println!(
-            "{{ instructions: {insns}, cycles: {cycles}, ipc: {ipc:.2} }}",
+            "{{ instructions: {insns}, cycles: {cycles}, ipc: {ipc:.2}, tid: {tid:?} }}",
             insns = counts[&PERF.insns],
             cycles = counts[&PERF.cycles],
-            ipc = (counts[&PERF.insns] as f64 / counts[&PERF.cycles] as f64)
+            ipc = (counts[&PERF.insns] as f64 / counts[&PERF.cycles] as f64),
+            tid = std::thread::current().id(),
         );
     }
 }
@@ -71,37 +72,48 @@ where
     S: Subscriber + for<'span> LookupSpan<'span> + std::fmt::Debug,
 {
     fn on_enter(&self, _id: &span::Id, _ctx: Context<'_, S>) {
-        print!("enter: ");
-        self.emit_ipc();
+        let mut group = PERF.group.lock();
+        group.reset().expect("failed to reset perf event");
     }
 
     fn on_exit(&self, _id: &span::Id, _ctx: Context<'_, S>) {
-        print!("exit : ");
         self.emit_ipc();
     }
 }
 
-//fn setup_global_subscriber() -> impl Drop {
-fn setup_global_subscriber() {
+// This will flush collected information to disk on termination.
+struct PerfLayerGuard;
+
+impl Drop for PerfLayerGuard {
+    fn drop(&mut self) {
+        println!("PerfLayerGuard drop");
+    }
+}
+
+impl PerfLayer {
+    pub fn with_file(_file: &str) -> (PerfLayer, PerfLayerGuard) {
+        (PerfLayer, PerfLayerGuard)
+    }
+}
+
+pub fn setup_global_subscriber() -> impl Drop {
     let fmt_layer = fmt::Layer::default();
-
-    //let (flame_layer, _guard) = FlameLayer::with_file("./tracing.folded").unwrap();
-    let perf_layer = PerfLayer;
-
+    let (perf_layer, guard) = PerfLayer::with_file("./perf.folded");
     let subscriber = Registry::default().with(fmt_layer).with(perf_layer);
-
     tracing::subscriber::set_global_default(subscriber).expect("Could not set global default");
-    //_guard
+    guard
 }
 
 #[tokio::main]
 async fn main() {
+    //console_subscriber::init();
     let _guard = setup_global_subscriber();
     {
         let mut group = PERF.group.lock();
         group.enable().expect("group enable");
     }
     cat("/etc/dictionaries-common/words").await;
+    std::thread::sleep(std::time::Duration::from_secs(30));
     {
         let mut group = PERF.group.lock();
         group.disable().expect("group disable");
