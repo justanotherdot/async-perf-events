@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-console-subscriber = "0.1.3"
+console-subscriber = "0.1.5"
 lazy_static = "1.4.0"
 parking_lot = "0.12.0"
 perf-event = "0.4.7"
